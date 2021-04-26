@@ -1,2 +1,8 @@
-token
+.idea/
+.vscode/
 node_modules/
+build/
+tmp/
+temp/
+token
+database.sqlite
