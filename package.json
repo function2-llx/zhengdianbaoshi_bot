@@ -11,6 +11,8 @@
    "devDependencies": {
       "@types/node": "^8.0.29",
       "@types/node-telegram-bot-api": "latest",
+      "axios": "latest",
+      "https-proxy-agent": "latest",
       "ts-node": "3.3.0",
       "typescript": "3.3.3333"
    },
