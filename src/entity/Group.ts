@@ -6,7 +6,7 @@ export class Group extends BaseEntity {
     @PrimaryColumn()
     id: number
 
-    constructor(id) {
+    constructor(id: number) {
         super();
         this.id = id;
     }
