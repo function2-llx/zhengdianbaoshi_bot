@@ -3,9 +3,12 @@ EXPOSE 9140
 
 WORKDIR /app
 
-RUN npm install node-telegram-bot-api
-RUN npm install -g typeorm
+COPY src ./
+COPY ormconfig.json ./
+COPY package.json ./
+COPY tsconfig.json ./
+COPY token ./
 
-COPY bot.js token ./
+RUN npm install
 
-CMD node bot
+CMD npm start

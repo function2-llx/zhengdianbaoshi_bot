@@ -1,26 +1,36 @@
+import * as fs from 'fs';
+import { assert } from 'console';
+
+// import TelegramBot = require('node-telegram-bot-api')
+import { MessageEntityType, MessageEntity} from 'node-telegram-bot-api'
+import * as TelegramBot from 'node-telegram-bot-api'
 import 'reflect-metadata'
 import * as typeorm from 'typeorm'
-import * as fs from 'fs';
-import TelegramBot = require('node-telegram-bot-api');
-import {Group} from './entity/Group';
-import { assert } from 'console';
 import * as math from 'mathjs'
+
+import { Group } from './entity/Group';
 
 const token = fs.readFileSync('token').toString().trim();
 const botId = Number(token.split(':')[0]);
 const bot = new TelegramBot(token, {polling: true});
+const timezone = 8;
 
-function getTime(): [number, number] {
+function getTimezoneTime(): {hours: number, minutes: number, seconds: number} {
     let date = new Date();
-    //              origin time zone -> UTC                     -> Beijing(UTC+8)
-    date.setMinutes(date.getMinutes() + date.getTimezoneOffset() + 8 * 60);
-    return [date.getHours(), date.getMinutes()];
+    //              time zone of server ->          UTC         -> Beijing(UTC+8)
+    date.setMinutes(date.getMinutes() + date.getTimezoneOffset() + timezone * 60);
+    return {
+        hours: date.getHours(),
+        minutes: date.getMinutes(),
+        seconds: date.getSeconds(),
+    }
 }
 
 const botCommands = {
     'fudu': '复读命令后方的文字',
     'sanmei': '随机生成一只丑三妹',
-    'baoshi': '手动报时'
+    'baoshi': '手动报时',
+    'time': '获取服务器时间'
 } as const;
 const csm = [
     '“今天的活动可以抽酸梅汤。”\n“丑三妹？在哪儿呢丑三妹？”',
@@ -54,20 +64,27 @@ typeorm.createConnection().then(async db => {
     bot.on('text', async msg => {
         if (msg.entities === undefined) return;
         // const text = msg.text;
-        let {chat, text} = msg;
-        msg.entities.forEach(async entity => {
-            const entity_text = text.slice(entity.offset, entity.offset + entity.length);
+        let {chat, text, entities} = msg;
+        const groupedEntities: Partial<Record<MessageEntityType, MessageEntity[]>> = {};
+        entities.forEach(async entity => {
+            if (groupedEntities[entity.type] === undefined) {
+                groupedEntities[entity.type] = [];
+            }
+            groupedEntities[entity.type].push(entity);
+
+            const entityText = text.slice(entity.offset, entity.offset + entity.length);
+
             switch (entity.type) {
                 case 'bot_command': {
-                    console.log(`从聊天${chat.id}收到命令：${entity_text}`);
-                    let [cmd, username] = entity_text.split('@');
+                    let [cmd, username] = entityText.split('@');
+                    console.log(`从聊天${chat.id}收到命令：${entityText}`);
                     if (username === me.username || chat.type == 'private') {
                         cmd = cmd.slice(1);
                         switch (cmd as keyof typeof botCommands) {
                             case 'fudu': {
-                                const fudu_text = text.slice(entity.offset + entity.length);
-                                if (fudu_text.length > 0) {
-                                    await bot.sendMessage(chat.id, fudu_text);
+                                const fuduText = text.slice(entity.offset + entity.length);
+                                if (fuduText.length > 0) {
+                                    await bot.sendMessage(chat.id, fuduText);
                                 }
                                 break;
                             }
@@ -76,8 +93,14 @@ typeorm.createConnection().then(async db => {
                                 break;
                             }
                             case 'baoshi': {
-                                let [hour] = getTime();
-                                await bot.sendSticker(chat.id, stickers[hour % 12]);
+                                let {hours} = getTimezoneTime();
+                                await bot.sendSticker(chat.id, stickers[hours % 12]);
+                                break;
+                            }
+                            case 'time': {
+                                // bot 所处服务器 locale 设为 zh_CN.utf8
+                                await bot.sendMessage(chat.id, new Date().toLocaleString());
+                                break;
                             }
                             default: {
                                 // 未知指令
