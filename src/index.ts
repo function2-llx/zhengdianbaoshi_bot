@@ -54,23 +54,27 @@ typeorm.createConnection().then(async db => {
         return {command, description};
     })), '设置命令失败');
 
-    // 上一次报时的日期及小时（包括群友报时）
-    let lastReport: string;
-
+    // 上一次各群组报时的日期及小时（包括群友报时）
+    let lastReport: Record<number, string> = {};
     async function setupReport() {
         for (;;) {
             const timeout = new Date().getNextHourTimeout(1);
             console.log(`setup timeout:${timeout}ms`);
             await new Promise(resolve => setTimeout(resolve, timeout));
             const d = new Date();
-            // 群友已经报过时了
-            if (d.toLocaleDateHoursString() === lastReport) return;
+            const hours12 = d.getHours() % 12;
+            const cur = d.toLocaleDateHoursString();
             const groups = await Group.find();
             // 等待所有组都发完
             await Promise.all(groups.map(async group => {
-                await bot.sendSticker(group.id, stickers[d.getHours() % 12]);
-                console.log(`${d.toLocaleString()}成功向${group.id}报时`);
+                if (lastReport[group.id] === cur) {
+                    console.log(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
+                } else {
+                    await bot.sendSticker(group.id, stickers[hours12]);
+                    console.log(`${d.toLocaleString()}：成功向${group.id}报时`);
+                }
             }));
+            lastReport = {};
         }
     }
     setupReport();
@@ -132,6 +136,7 @@ typeorm.createConnection().then(async db => {
                             break;
                         }
                     }
+                    break;
                 }
                 default: {
                     break;
@@ -153,7 +158,8 @@ typeorm.createConnection().then(async db => {
             case 'group': {
                 const d = new Date();
                 if (stickersInv[sticker.file_id] === d.getHours()) {
-                    lastReport = d.toLocaleDateHoursString();
+                    // 记录群友报时
+                    lastReport[chat.id] = d.toLocaleDateHoursString();
                 }
                 break;
             }
