@@ -111,7 +111,6 @@ typeorm.createConnection().then(async db => {
                     entity.type == 'text_mention' && entity.user.username == me.username;
         });
 
-
         if (chat.type != 'private' && !mentionMe) return;
         entities.forEach(async entity => {
             const text = getEntityText(entity);
