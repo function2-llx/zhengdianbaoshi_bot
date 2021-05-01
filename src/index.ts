@@ -12,18 +12,6 @@ import './date'
 const token = fs.readFileSync('token').toString().trim();
 const botId = Number(token.split(':')[0]);
 const bot = new TelegramBot(token, {polling: true});
-// const timezone = 8;
-
-// function getTimezoneTime(): {hours: number, minutes: number, seconds: number} {
-//     let date = new Date();
-//     //              time zone of server ->          UTC         -> Beijing(UTC+8)
-//     date.setMinutes(date.getMinutes() + date.getTimezoneOffset() + timezone * 60);
-//     return {
-//         hours: date.getHours(),
-//         minutes: date.getMinutes(),
-//         seconds: date.getSeconds(),
-//     }
-// }
 
 const botCommands = {
     'fudu': '复读命令后方的文字',
@@ -75,12 +63,17 @@ typeorm.createConnection().then(async db => {
         const timeout = ((59 + memberMinutes - d.getMinutes()) * 60 + 60 - d.getSeconds()) * 1000 + 1000 - d.getMilliseconds();
         await new Promise(resolve => setTimeout(resolve, timeout));
         // 每小时报时一次
-        setInterval(async () => {
-            const d = new Date();
-            // 群友已经报过时了
-            if (d.toLocaleDateHoursString() === lastReport) return;
-            (await Group.find()).forEach(group => bot.sendSticker(group.id, stickers[d.getHours() % 12]));
-        }, 60 * 60 * 1000);
+        function report() {
+            async () => {
+                const d = new Date();
+                // 群友已经报过时了
+                if (d.toLocaleDateHoursString() === lastReport) return;
+                (await Group.find()).forEach(group => bot.sendSticker(group.id, stickers[d.getHours() % 12]));
+            }
+        }
+        // start immediately
+        report();
+        setInterval(report, 60 * 60 * 1000);
     }
 
     setupReport();
