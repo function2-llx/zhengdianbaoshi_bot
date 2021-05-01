@@ -27,6 +27,10 @@ const csm = [
     '不过还是多次切片的写法帅一点（可惜编译不通过',
 ] as const;
 
+function botLog(message?: any, ...optionalParams: any[]): void {
+    console.log(new Date().toLocaleString(), message, optionalParams)
+}
+
 // 来自 https://t.me/addstickers/what_what_time_is_it
 const stickers = [
     'CAACAgUAAxkBAAONYIcMo6PL8b9BwGGsPwO58AgojIUAAvMAAw8VzRnmFuRA7k_-mh8E',
@@ -45,21 +49,23 @@ const stickers = [
 const stickersInv = stickers.reduce((result, sticker, idx) => (result[sticker] = idx, result), {} as Record<string, number>);
 
 typeorm.createConnection().then(async db => {
-    console.log(`connected to database ${db.name}`);
-    console.log('当前所在群聊：');
-    (await Group.find()).forEach(group => console.log(`\t${group.id}`));
+    botLog(`connected to database ${db.name}`);
+    botLog('当前所在群聊：');
+    (await Group.find()).forEach(group => botLog(`\t${group.id}`));
     const me = await bot.getMe();
     assert(me.id === botId, 'bot username 检查失败');
-    assert(await bot.setMyCommands(Object.entries(botCommands).map(([command, description]) => {
-        return {command, description};
-    })), '设置命令失败');
+    {
+        // setup commands & protect namespace
+        const commandObjects = Object.entries(botCommands).map(([command, description]) => { return {command, description}; });
+        assert(await bot.setMyCommands(commandObjects), '设置命令失败');
+    }
 
     // 上一次各群组报时的日期及小时（包括群友报时）
     let lastReport: Record<number, string> = {};
     async function setupReport() {
         for (;;) {
             const timeout = new Date().getNextHourTimeout(1);
-            console.log(`setup timeout:${timeout}ms`);
+            botLog(`setup timeout:${timeout}ms`);
             await new Promise(resolve => setTimeout(resolve, timeout));
             const d = new Date();
             const hours12 = d.getHours() % 12;
@@ -68,10 +74,10 @@ typeorm.createConnection().then(async db => {
             // 等待所有组都发完
             await Promise.all(groups.map(async group => {
                 if (lastReport[group.id] === cur) {
-                    console.log(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
+                    botLog(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
                 } else {
                     await bot.sendSticker(group.id, stickers[hours12]);
-                    console.log(`${d.toLocaleString()}：成功向${group.id}报时`);
+                    botLog(`${d.toLocaleString()}：成功向${group.id}报时`);
                 }
             }));
             lastReport = {};
@@ -108,7 +114,7 @@ typeorm.createConnection().then(async db => {
             switch (entity.type) {
                 case 'bot_command': {
                     let [cmd] = entityText.split('@');
-                    console.log(`从聊天${chat.id}收到命令：${cmd}`);
+                    botLog(`从聊天${chat.id}收到命令：${cmd}`);
                     cmd = cmd.slice(1);
                     switch (cmd as keyof typeof botCommands) {
                         case 'fudu': {
@@ -150,7 +156,7 @@ typeorm.createConnection().then(async db => {
         switch (chat.type) {
             case 'private': {
                 // 用来手动获取 sticker id
-                console.log('收到私聊 sticker:', sticker);
+                botLog('收到私聊 sticker:', sticker);
                 await bot.sendMessage(chat.id, sticker.file_id);
                 await bot.sendSticker(chat.id, sticker.file_id);
                 break;
@@ -170,7 +176,7 @@ typeorm.createConnection().then(async db => {
         if (msg.new_chat_members.find(member => member.id == botId)) {
             const chat = msg.chat;
             await new Group(chat.id).save();
-            console.log(`加入${chat.title}(${chat.id})`);
+            botLog(`加入${chat.title}(${chat.id})`);
             // await bot.sendMessage(chat.id, '我会报时啦！');
         }
     });
@@ -179,7 +185,7 @@ typeorm.createConnection().then(async db => {
         if (msg.left_chat_member.id == botId) {
             const chat = msg.chat;
             await new Group(chat.id).remove();
-            console.log(`离开${chat.title}(${chat.id})`);
+            botLog(`离开${chat.title}(${chat.id})`);
         }
     });
-}).catch(error => console.log(error));
+}).catch(error => botLog(error));
