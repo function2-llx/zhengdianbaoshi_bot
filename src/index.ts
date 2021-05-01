@@ -7,6 +7,7 @@ import * as typeorm from 'typeorm'
 import * as math from 'mathjs'
 
 import { Group } from './entity/Group';
+import './date'
 
 const token = fs.readFileSync('token').toString().trim();
 const botId = Number(token.split(':')[0]);
