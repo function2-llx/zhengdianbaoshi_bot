@@ -58,27 +58,21 @@ typeorm.createConnection().then(async db => {
     let lastReport: string;
 
     async function setupReport() {
-        const d = new Date();
-        // 给群友一分钟时间报时
-        const memberMinutes = 1;
-        // 对齐整小时
-        const timeout = ((59 + memberMinutes - d.getMinutes()) * 60 + 60 - d.getSeconds()) * 1000 + 1000 - d.getMilliseconds();
-        console.log(`setup timeout:${timeout}`);
-        await new Promise(resolve => setTimeout(resolve, timeout));
-        // 每小时报时一次
-        function report() {
-            async () => {
-                const d = new Date();
-                // 群友已经报过时了
-                if (d.toLocaleDateHoursString() === lastReport) return;
-                (await Group.find()).forEach(group => bot.sendSticker(group.id, stickers[d.getHours() % 12]));
-            }
+        for (;;) {
+            const timeout = new Date().getNextHourTimeout(1);
+            console.log(`setup timeout:${timeout}ms`);
+            await new Promise(resolve => setTimeout(resolve, timeout));
+            const d = new Date();
+            // 群友已经报过时了
+            if (d.toLocaleDateHoursString() === lastReport) return;
+            const groups = await Group.find();
+            // 等待所有组都发完
+            await Promise.all(groups.map(async group => {
+                await bot.sendSticker(group.id, stickers[d.getHours() % 12]);
+                console.log(`${d.toLocaleString()}成功向${group.id}报时`);
+            }));
         }
-        // start immediately
-        report();
-        setInterval(report, 60 * 60 * 1000);
     }
-
     setupReport();
 
     bot.on('text', async msg => {
@@ -97,24 +91,20 @@ typeorm.createConnection().then(async db => {
         // }
         // const groupedEntities = groupEntities(entities);
 
-        function getEntityText(entity: TelegramBot.MessageEntity) {
-            return text.slice(entity.offset, entity.offset + entity.length);
-        }
-
         const mentionMe = entities.some(entity => {
-            const text = getEntityText(entity);
-            return entity.type == 'mention' && text.slice(1) == me.username ||
-                    entity.type == 'bot_command' && text.startsWith(`@${me.username}`) ||
+            const entityText = text.slice(entity.offset, entity.offset + entity.length);
+            return entity.type == 'mention' && entityText.slice(1) == me.username ||
+                    entity.type == 'bot_command' && entityText.startsWith(`@${me.username}`) ||
                     entity.type == 'text_mention' && entity.user.username == me.username;
         });
 
         if (chat.type != 'private' && !mentionMe) return;
         entities.forEach(async entity => {
-            const text = getEntityText(entity);
+            const entityText = text.slice(entity.offset, entity.offset + entity.length);
             switch (entity.type) {
                 case 'bot_command': {
-                    let [cmd] = text.split('@');
-                    console.log(`从聊天${chat.id}收到命令：${text}`);
+                    let [cmd] = entityText.split('@');
+                    console.log(`从聊天${chat.id}收到命令：${cmd}`);
                     cmd = cmd.slice(1);
                     switch (cmd as keyof typeof botCommands) {
                         case 'fudu': {
