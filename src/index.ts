@@ -46,6 +46,8 @@ const stickersInv = stickers.reduce((result, sticker, idx) => (result[sticker] =
 
 typeorm.createConnection().then(async db => {
     console.log(`connected to database ${db.name}`);
+    console.log('当前所在群聊：');
+    (await Group.find()).forEach(group => console.log(`\t${group.id}`));
     const me = await bot.getMe();
     assert(me.id === botId, 'bot username 检查失败');
     assert(await bot.setMyCommands(Object.entries(botCommands).map(([command, description]) => {
@@ -61,6 +63,7 @@ typeorm.createConnection().then(async db => {
         const memberMinutes = 1;
         // 对齐整小时
         const timeout = ((59 + memberMinutes - d.getMinutes()) * 60 + 60 - d.getSeconds()) * 1000 + 1000 - d.getMilliseconds();
+        console.log(`setup timeout:${timeout}`);
         await new Promise(resolve => setTimeout(resolve, timeout));
         // 每小时报时一次
         function report() {
@@ -170,17 +173,17 @@ typeorm.createConnection().then(async db => {
     bot.on('new_chat_members', async msg => {
         if (msg.new_chat_members.find(member => member.id == botId)) {
             const chat = msg.chat;
-            new Group(chat.id).save();
+            await new Group(chat.id).save();
             console.log(`加入${chat.title}(${chat.id})`);
-            await bot.sendMessage(chat.id, '我还在开发中，还不会自动报时呜呜呜 T T');
+            // await bot.sendMessage(chat.id, '我会报时啦！');
         }
     });
     
     bot.on('left_chat_member', async msg => {
         if (msg.left_chat_member.id == botId) {
             const chat = msg.chat;
+            await new Group(chat.id).remove();
             console.log(`离开${chat.title}(${chat.id})`);
-            new Group(chat.id).save();
         }
     });
 }).catch(error => console.log(error));
