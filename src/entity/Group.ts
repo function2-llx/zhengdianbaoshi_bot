@@ -32,10 +32,8 @@ export class Group extends BaseEntity {
     name(): string { return `${this.title}\(${this.id}\)`; }
 
     async setOn(on: boolean) {
-        if (on != this.on) {
-            this.on = on;
-            await this.save();
-        }
+        this.on = on;
+        await this.save();
     }
 
     /**
