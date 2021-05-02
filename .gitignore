@@ -8,3 +8,4 @@ token
 database.sqlite
 package-lock.json
 *.zip
+**/*.log
