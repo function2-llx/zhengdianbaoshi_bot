@@ -1,13 +1,14 @@
 import * as fs from 'fs';
-import { assert } from 'console';
+import { strict as assert, AssertionError } from 'assert'
 
+import * as winston from 'winston'
 import * as TelegramBot from 'node-telegram-bot-api'
 import 'reflect-metadata'
 import * as typeorm from 'typeorm'
 import * as math from 'mathjs'
 
 import { Group } from './entity/Group';
-import './date'
+import { chatIsGroup } from './aug'
 
 const token = fs.readFileSync('token').toString().trim();
 const botId = Number(token.split(':')[0]);
@@ -18,7 +19,7 @@ const botCommands = {
     'sanmei': '随机生成一只丑三妹',
     'baoshi': '手动报时',
     'time': '获取服务器时间',
-    'on': '开启整点点报时功能',
+    'on': '开启整点报时功能',
     'off': '关闭整点报时功能',
 } as const;
 const csm = [
@@ -27,9 +28,17 @@ const csm = [
     '不过还是多次切片的写法帅一点（可惜编译不通过',
 ] as const;
 
-function botLog(message?: any, ...optionalParams: any[]): void {
-    console.log(new Date().toLocaleString(), message, optionalParams)
-}
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf(({level, message, timestamp}) => `${timestamp} ${level.toUpperCase()}: ${message}`),
+    ),
+    transports: [
+        new winston.transports.Console(),
+        new winston.transports.File({ filename: 'bot.log' })
+    ]
+});
 
 // 来自 https://t.me/addstickers/what_what_time_is_it
 const stickers = [
@@ -49,9 +58,9 @@ const stickers = [
 const stickersInv = stickers.reduce((result, sticker, idx) => (result[sticker] = idx, result), {} as Record<string, number>);
 
 typeorm.createConnection().then(async db => {
-    botLog(`connected to database ${db.name}`);
-    botLog('当前所在群聊：');
-    (await Group.find()).forEach(group => botLog(`\t${group.id}`));
+    logger.info(`连接到数据库：${db.name}`);
+    logger.info(await Group.digest());
+
     const me = await bot.getMe();
     assert(me.id === botId, 'bot username 检查失败');
     {
@@ -65,7 +74,7 @@ typeorm.createConnection().then(async db => {
     async function setupReport() {
         for (;;) {
             const timeout = new Date().getNextHourTimeout(1);
-            botLog(`setup timeout:${timeout}ms`);
+            logger.info(`setup timeout:${timeout}ms`);
             await new Promise(resolve => setTimeout(resolve, timeout));
             const d = new Date();
             const hours12 = d.getHours() % 12;
@@ -74,10 +83,10 @@ typeorm.createConnection().then(async db => {
             // 等待所有组都发完
             await Promise.all(groups.map(async group => {
                 if (lastReport[group.id] === cur) {
-                    botLog(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
+                    logger.info(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
                 } else {
                     await bot.sendSticker(group.id, stickers[hours12]);
-                    botLog(`${d.toLocaleString()}：成功向${group.id}报时`);
+                    logger.info(`${d.toLocaleString()}：成功向${group.id}报时`);
                 }
             }));
             lastReport = {};
@@ -86,25 +95,12 @@ typeorm.createConnection().then(async db => {
     setupReport();
 
     bot.on('text', async msg => {
-        if (msg.entities === undefined) return;
         const {chat, text, entities} = msg;
-        // function groupEntities(entities: TelegramBot.MessageEntity[]) {
-        //     const groupedEntities = {} as Record<TelegramBot.MessageEntityType, TelegramBot.MessageEntity[]>;
-        //     const meta = reflect<TelegramBot.MessageEntityType>() as UnionType;
-        //     assert(meta.kind == TypeKind.Union);
-        //     meta.types.forEach((type: StringLiteralType) => {
-        //         assert(type.kind == TypeKind.StringLiteral);
-        //         groupedEntities[type.value as TelegramBot.MessageEntityType] = [];
-        //     });
-        //     entities.forEach(entity => groupedEntities[entity.type].push(entity));
-        //     return groupedEntities;
-        // }
-        // const groupedEntities = groupEntities(entities);
-
+        if (entities === undefined) return;
         const mentionMe = entities.some(entity => {
             const entityText = text.slice(entity.offset, entity.offset + entity.length);
             return entity.type == 'mention' && entityText.slice(1) == me.username ||
-                    entity.type == 'bot_command' && entityText.startsWith(`@${me.username}`) ||
+                    entity.type == 'bot_command' && entityText.includes(`@${me.username}`) ||
                     entity.type == 'text_mention' && entity.user.username == me.username;
         });
 
@@ -113,10 +109,9 @@ typeorm.createConnection().then(async db => {
             const entityText = text.slice(entity.offset, entity.offset + entity.length);
             switch (entity.type) {
                 case 'bot_command': {
-                    let [cmd] = entityText.split('@');
-                    botLog(`从聊天${chat.id}收到命令：${cmd}`);
-                    cmd = cmd.slice(1);
-                    switch (cmd as keyof typeof botCommands) {
+                    const cmd = entityText.split('@')[0].slice(1) as keyof typeof botCommands;
+                    logger.info(`从聊天${chat.id}收到命令：${cmd}`);
+                    switch (cmd) {
                         case 'fudu': {
                             const fuduText = text.slice(entity.offset + entity.length);
                             if (fuduText.length > 0) {
@@ -135,6 +130,18 @@ typeorm.createConnection().then(async db => {
                         case 'time': {
                             // bot 所处服务器 locale 设为 zh_CN.utf8
                             await bot.sendMessage(chat.id, new Date().toLocaleString());
+                            break;
+                        }
+                        case 'off':
+                        case 'on': {
+                            if (chatIsGroup(chat)) {
+                                const group = Group.fromChat(chat);
+                                const on = cmd == 'on';
+                                await group.setOn(on);
+                                await bot.sendMessage(chat.id, `已${on ? '打开' : '关闭'}本群组的报时`);
+                            } else {
+                                await bot.sendMessage(chat.id, '本命令只对群组有效');
+                            }
                             break;
                         }
                         default: {
@@ -156,7 +163,7 @@ typeorm.createConnection().then(async db => {
         switch (chat.type) {
             case 'private': {
                 // 用来手动获取 sticker id
-                botLog('收到私聊 sticker:', sticker);
+                logger.info('收到私聊 sticker:', sticker);
                 await bot.sendMessage(chat.id, sticker.file_id);
                 await bot.sendSticker(chat.id, sticker.file_id);
                 break;
@@ -174,18 +181,19 @@ typeorm.createConnection().then(async db => {
 
     bot.on('new_chat_members', async msg => {
         if (msg.new_chat_members.find(member => member.id == botId)) {
-            const chat = msg.chat;
-            await new Group(chat.id).save();
-            botLog(`加入${chat.title}(${chat.id})`);
-            // await bot.sendMessage(chat.id, '我会报时啦！');
+            const group = Group.fromChat(msg.chat);
+            await group.save();
+            logger.info(`加入${group.name()}`);
         }
     });
-    
+
     bot.on('left_chat_member', async msg => {
         if (msg.left_chat_member.id == botId) {
-            const chat = msg.chat;
-            await new Group(chat.id).remove();
-            botLog(`离开${chat.title}(${chat.id})`);
+            const group = Group.fromChat(msg.chat);
+            // group.remove 后 id 会清空
+            const name = group.name();
+            await group.remove();
+            logger.info(`离开${name}`);
         }
     });
-}).catch(error => botLog(error));
+}).catch(error => logger.info(error));

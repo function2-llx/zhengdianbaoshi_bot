@@ -1,4 +1,4 @@
-export {};
+import * as TelegramBot from 'node-telegram-bot-api';
 
 declare global {
     interface Date {
@@ -22,4 +22,10 @@ Date.prototype.toLocaleDateHoursString = function(this: Date): string {
 
 Date.prototype.getNextHourTimeout = function(this: Date, minutes = 0, seconds = 0): number {
     return ((59 - this.getMinutes() + minutes) * 60 + 59 - this.getSeconds() + seconds) * 1000 + 1000 - this.getMilliseconds();
+}
+
+// It's insane ts does not allow default interface default implementation
+// ts 为啥不让 interface 有默认实现？？？
+export function chatIsGroup(chat: TelegramBot.Chat): boolean {
+    return (<TelegramBot.ChatType[]>['group', 'supergroup']).includes(chat.type);
 }
