@@ -43,6 +43,6 @@ export class Group extends BaseEntity {
      */
     static async digest(take: number = -1) {
         const groups = await Group.find({take});
-        return '当前所在群聊：\n' + groups.map(group => `${group.id}  ${group.title} ${group.on}\n`);
+        return '当前所在群聊：\n' + groups.map(group => `${group.id}  ${group.title} ${group.on}`).join('\n') + '\n';
     }
 }

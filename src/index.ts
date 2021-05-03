@@ -6,6 +6,7 @@ import * as TelegramBot from 'node-telegram-bot-api'
 import 'reflect-metadata'
 import * as typeorm from 'typeorm'
 import * as math from 'mathjs'
+import { DateTime } from 'luxon/src/datetime'
 
 import { Group } from './entity/Group';
 import { chatIsGroup } from './aug'
@@ -31,8 +32,8 @@ const csm = [
 const logger = winston.createLogger({
     level: 'info',
     format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.printf(({level, message, timestamp}) => `${timestamp} ${level.toUpperCase()}: ${message}`),
+        winston.format.timestamp({ format: () => DateTime.now().toISO() }),
+        winston.format.printf(({level, message, timestamp}) => `${timestamp} ${level}: ${message}`),
     ),
     transports: [
         new winston.transports.Console(),
@@ -73,20 +74,23 @@ typeorm.createConnection().then(async db => {
     let lastReport: Record<number, string> = {};
     async function setupReport() {
         for (;;) {
-            const timeout = new Date().getNextHourTimeout(1);
+            const timeout = DateTime.now().getNextHourTimeout(1);
             logger.info(`setup timeout:${timeout}ms`);
             await new Promise(resolve => setTimeout(resolve, timeout));
-            const d = new Date();
-            const hours12 = d.getHours() % 12;
+            const d = DateTime.now();
+            const hours12 = d.hour % 12;
             const cur = d.toLocaleDateHoursString();
-            const groups = await Group.find();
+            const groups = await Group.find({
+                select: ['id', 'title'],
+                where: { on: true },
+            });
             // 等待所有组都发完
             await Promise.all(groups.map(async group => {
                 if (lastReport[group.id] === cur) {
-                    logger.info(`${d.toLocaleString()}：${group.id}群友已报时，跳过`);
+                    logger.info(`${d.toLocaleString()}：${group.name()}群友已报时，跳过`);
                 } else {
                     await bot.sendSticker(group.id, stickers[hours12]);
-                    logger.info(`${d.toLocaleString()}：成功向${group.id}报时`);
+                    logger.info(`${d.toLocaleString()}：成功向${group.name()}报时`);
                 }
             }));
             lastReport = {};
@@ -124,12 +128,14 @@ typeorm.createConnection().then(async db => {
                             break;
                         }
                         case 'baoshi': {
-                            await bot.sendSticker(chat.id, stickers[new Date().getHours() % 12]);
+                            const d = DateTime.now();
+                            await bot.sendSticker(chat.id, stickers[d.hour % 12]);
+                            lastReport[chat.id] = d.toLocaleDateHoursString();
                             break;
                         }
                         case 'time': {
                             // bot 所处服务器 locale 设为 zh_CN.utf8
-                            await bot.sendMessage(chat.id, new Date().toLocaleString());
+                            await bot.sendMessage(chat.id, DateTime.now().toLocaleString(DateTime.DATETIME_HUGE_WITH_SECONDS));
                             break;
                         }
                         case 'off':
@@ -169,8 +175,8 @@ typeorm.createConnection().then(async db => {
                 break;
             }
             case 'group': {
-                const d = new Date();
-                if (stickersInv[sticker.file_id] === d.getHours()) {
+                const d = DateTime.now();
+                if (stickersInv[sticker.file_id] === d.hour) {
                     // 记录群友报时
                     lastReport[chat.id] = d.toLocaleDateHoursString();
                 }
