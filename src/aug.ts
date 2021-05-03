@@ -1,6 +1,6 @@
 import * as TelegramBot from 'node-telegram-bot-api';
 // workaround for https://github.com/microsoft/TypeScript/issues/18877
-import { DateTime } from 'luxon/src/datetime'
+import { DateTime } from 'luxon'
 
 declare module 'luxon/src/datetime' {
     interface DateTime {

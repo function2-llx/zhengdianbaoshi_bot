@@ -6,7 +6,8 @@ import * as TelegramBot from 'node-telegram-bot-api'
 import 'reflect-metadata'
 import * as typeorm from 'typeorm'
 import * as math from 'mathjs'
-import { DateTime } from 'luxon/src/datetime'
+import 'luxon'
+import { DateTime } from 'luxon'
 
 import { Group } from './entity/Group';
 import { chatIsGroup } from './aug'
