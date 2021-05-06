@@ -90,8 +90,17 @@ typeorm.createConnection().then(async db => {
                 if (lastReport[group.id] === cur) {
                     logger.info(`${d.toLocaleString()}：${group.name()}群友已报时，跳过`);
                 } else {
-                    await bot.sendSticker(group.id, stickers[hours12]);
-                    logger.info(`${d.toLocaleString()}：成功向${group.name()}报时`);
+                    bot.sendSticker(group.id, stickers[hours12])
+                        .then(() => logger.info(`${d.toLocaleString()}：成功向${group.name()}报时`))
+                        .catch(async (err: Error) => {
+                            if (err.message == 'ETELEGRAM: 403 Forbidden: bot was kicked from the group chat') {
+                                logger.info(`检测到 ${group.name()} 可能已不存在`);
+                                await group.remove();
+                            } else {
+                                logger.info(`${d.toLocaleString()}：未成功向${group.name()}报时，原因不详`);
+                                logger.error(JSON.stringify(err));
+                            }
+                        });
                 }
             }));
             lastReport = {};
@@ -203,4 +212,25 @@ typeorm.createConnection().then(async db => {
             logger.info(`离开${name}`);
         }
     });
+
+    bot.on('group_chat_created', async msg => {
+        const group = Group.fromChat(msg.chat);
+        logger.info(`群组创建：` + group.name());
+        await group.save();
+    });
+
+
+    bot.on('new_chat_title', async msg => {
+        const group = Group.fromChat(msg.chat);
+        logger.info(`群组更名：` + group.name());
+        await group.save();
+    })
+
+    bot.on('polling_error', err => {
+        // 测试用
+        console.log(err.name);
+        console.log(err.message);
+        err.name
+    })
+
 }).catch(error => logger.info(error));
