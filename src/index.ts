@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { strict as assert, AssertionError } from 'assert'
+import { strict as assert } from 'assert'
 
 import * as winston from 'winston'
 import * as TelegramBot from 'node-telegram-bot-api'
@@ -59,10 +59,18 @@ const stickers = [
 ] as const;
 const stickersInv = stickers.reduce((result, sticker, idx) => (result[sticker] = idx, result), {} as Record<string, number>);
 
-typeorm.createConnection().then(async db => {
-    logger.info(`连接到数据库：${db.name}`);
-    logger.info(await Group.digest());
+const ds = new typeorm.DataSource({
+    'type': 'sqlite',
+    'database': 'database.sqlite',
+    'synchronize': true,
+    'logging': false,
+    'entities': [Group],
+});
 
+ds.initialize().then(async () => {
+    logger.info(`连接到数据库：${ds.name}`);
+    logger.info(await Group.digest());
+    
     const me = await bot.getMe();
     assert(me.id === botId, 'bot username 检查失败');
     {
@@ -70,7 +78,7 @@ typeorm.createConnection().then(async db => {
         const commandObjects = Object.entries(botCommands).map(([command, description]) => { return {command, description}; });
         assert(await bot.setMyCommands(commandObjects), '设置命令失败');
     }
-
+    
     // 上一次各群组报时的日期及小时（包括群友报时）
     let lastReport: Record<number, string> = {};
     async function setupReport() {
@@ -107,7 +115,7 @@ typeorm.createConnection().then(async db => {
         }
     }
     setupReport();
-
+    
     bot.on('text', async msg => {
         const {chat, text, entities} = msg;
         if (entities === undefined) return;
@@ -117,7 +125,7 @@ typeorm.createConnection().then(async db => {
                     entity.type == 'bot_command' && entityText.includes(`@${me.username}`) ||
                     entity.type == 'text_mention' && entity.user.username == me.username;
         });
-
+    
         if (chat.type != 'private' && !mentionMe) return;
         entities.forEach(async entity => {
             const entityText = text.slice(entity.offset, entity.offset + entity.length);
@@ -173,7 +181,7 @@ typeorm.createConnection().then(async db => {
             }
         });
     });
-
+    
     bot.on('sticker', async msg => {
         const {chat, sticker} = msg;
         switch (chat.type) {
@@ -194,7 +202,7 @@ typeorm.createConnection().then(async db => {
             }
         }
     });
-
+    
     bot.on('new_chat_members', async msg => {
         if (msg.new_chat_members.find(member => member.id == botId)) {
             const group = Group.fromChat(msg.chat);
@@ -202,7 +210,7 @@ typeorm.createConnection().then(async db => {
             logger.info(`加入${group.name()}`);
         }
     });
-
+    
     bot.on('left_chat_member', async msg => {
         if (msg.left_chat_member.id == botId) {
             const group = Group.fromChat(msg.chat);
@@ -212,25 +220,24 @@ typeorm.createConnection().then(async db => {
             logger.info(`离开${name}`);
         }
     });
-
+    
     bot.on('group_chat_created', async msg => {
         const group = Group.fromChat(msg.chat);
         logger.info(`群组创建：` + group.name());
         await group.save();
     });
-
-
+    
+    
     bot.on('new_chat_title', async msg => {
         const group = Group.fromChat(msg.chat);
         logger.info(`群组更名：` + group.name());
         await group.save();
     })
-
+    
     bot.on('polling_error', err => {
         // 测试用
         console.log(err.name);
         console.log(err.message);
         err.name
     })
-
-}).catch(error => logger.info(error));
+});

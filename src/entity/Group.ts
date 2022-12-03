@@ -13,7 +13,7 @@ export class Group extends BaseEntity {
     @Column()
     on: boolean
 
-    constructor(id: number, title: string) {
+    constructor(id: number = null, title: string = null) {
         super();
         this.id = id;
         this.title = title;
